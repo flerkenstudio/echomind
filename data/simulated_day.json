@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-08",
+  "user": "Martha",
+  "segments": [
+    {"time": "08:12", "speaker": "user", "text": "Good morning. What do I have today?", "location": "home", "tags": []},
+    {"time": "09:30", "speaker": "doctor_chen", "text": "Okay Martha, the new prescription is two pills daily, with food, not three like the old one. And schedule a follow-up in two weeks.", "location": "clinic", "tags": ["health", "critical_info"]},
+    {"time": "10:05", "speaker": "user", "text": "I'll call the pharmacy this afternoon to order the refill.", "location": "home", "tags": ["commitment"]},
+    {"time": "13:40", "speaker": "daughter_sarah", "text": "Mom, are you okay? You sound tired.", "location": "phone_call", "tags": ["family", "mood"]},
+    {"time": "13:42", "speaker": "user", "text": "I'm a bit worried about the medication, I don't remember what the doctor said exactly.", "location": "phone_call", "tags": ["mood", "concern"]},
+    {"time": "16:15", "speaker": "user", "text": "What did the doctor say about my pills? Was it two or three?", "location": "home", "tags": ["repetition_flag"]},
+    {"time": "18:50", "speaker": "user", "text": "Sarah, remind me — how many pills did Dr. Chen say?", "location": "home", "tags": ["repetition_flag"]}
+  ]
+}

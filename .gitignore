@@ -1,0 +1,10 @@
+venv/
+.venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+.DS_Store
+local_data/
+.aws-sam/

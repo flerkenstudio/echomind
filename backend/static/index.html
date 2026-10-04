@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoMind — Memory that listens</title>
+<style>
+  :root { --bg:#faf7f2; --card:#fff; --ink:#3b3630; --accent:#e8853d; --soft:#f0e9df; --good:#4d8b5c; --warn:#c0563a; }
+  * { box-sizing:border-box; margin:0; font-family:Georgia,serif; }
+  body { background:var(--bg); color:var(--ink); max-width:640px; margin:0 auto; padding:1rem; }
+  header { text-align:center; padding:1rem 0; }
+  header h1 { font-size:1.6rem; } header p { color:#8a8177; font-style:italic; }
+  nav { display:flex; gap:.5rem; margin:1rem 0; }
+  nav button { flex:1; padding:.7rem; border:1px solid var(--soft); background:var(--card); border-radius:12px; font-size:1rem; cursor:pointer; }
+  nav button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .card { background:var(--card); border:1px solid var(--soft); border-radius:16px; padding:1.2rem; margin-bottom:1rem; box-shadow:0 2px 6px rgba(0,0,0,.04); }
+  .card h3 { font-size:.8rem; text-transform:uppercase; letter-spacing:.1em; color:#8a8177; margin-bottom:.6rem; }
+  .digest { font-size:1.15rem; line-height:1.7; }
+  .reminder { display:flex; align-items:center; gap:.8rem; padding:.7rem 0; border-top:1px solid var(--soft); }
+  .reminder:first-child { border-top:none; }
+  .reminder p { flex:1; }
+  .badge { font-size:.7rem; padding:.2rem .5rem; border-radius:8px; background:var(--soft); margin-left:.4rem; }
+  .badge.boost { background:#fde8cf; color:var(--accent); font-weight:bold; }
+  .badge.esc { background:#f8dcd4; color:var(--warn); font-weight:bold; }
+  button.btn { padding:.5rem 1rem; border:none; border-radius:10px; background:var(--good); color:#fff; cursor:pointer; }
+  button.btn.accent { background:var(--accent); }
+  button.btn:disabled { background:#c9d6cb; cursor:default; }
+  #chat { display:flex; flex-direction:column; gap:.8rem; min-height:260px; }
+  .bubble { max-width:85%; padding:.9rem 1.1rem; border-radius:16px; line-height:1.5; }
+  .user { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
+  .bot { align-self:flex-start; background:var(--soft); border-bottom-left-radius:4px; }
+  .cite { display:block; margin-top:.4rem; font-size:.8rem; color:#8a8177; }
+  .askrow { display:flex; gap:.5rem; }
+  .askrow input { flex:1; padding:.8rem; border:1px solid var(--soft); border-radius:12px; font-size:1rem; }
+  .signal { padding:.6rem 0; border-top:1px solid var(--soft); font-size:.95rem; }
+  .alert { color:var(--warn); font-weight:bold; margin-top:.8rem; }
+  .muted { color:#8a8177; font-size:.85rem; font-style:italic; margin-top:.6rem; }
+  #toast p { background:#fff4e6; border-left:4px solid var(--accent); padding:.6rem .8rem; margin-top:.5rem; border-radius:6px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header><h1>🐝 EchoMind</h1><p>Memory that listens.</p></header>
+<nav>
+  <button data-tab="home" class="active">Home</button>
+  <button data-tab="ask">Ask</button>
+  <button data-tab="sarah">Family</button>
+</nav>
+<main>
+  <section id="tab-home">
+    <div class="card"><h3>Today's reflection</h3><div class="digest" id="digest">Loading…</div></div>
+    <div class="card"><h3>Gentle reminders</h3><div id="reminders"></div>
+      <div style="margin-top:.8rem;display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn accent" id="refresh">🔄 Refresh</button>
+        <button class="btn accent" id="tick">⏰ Simulate evening check-in</button>
+      </div>
+      <div id="toast"></div>
+    </div>
+  </section>
+  <section id="tab-ask" class="hidden">
+    <div class="card"><div id="chat"><div class="bot bubble">Hi Martha. Ask me anything about your day. 🌼</div></div></div>
+    <div class="askrow">
+      <input id="q" placeholder="What did the doctor say about my pills?">
+      <button class="btn accent" id="send">Ask</button>
+    </div>
+  </section>
+  <section id="tab-sarah" class="hidden">
+    <div class="card"><h3>Caregiver view — signals, not surveillance</h3>
+      <div id="sarahBody">Loading…</div>
+      <p class="muted">Martha's private conversations stay private. You see patterns that matter.</p>
+    </div>
+  </section>
+</main>
+<script>
+const API = window.ECHOMIND_API || "";
+const DATE = "2026-10-08";
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  if (!r.ok) { const e = new Error("HTTP " + r.status); e.status = r.status; throw e; }
+  return r.json();
+}
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  document.querySelectorAll("main section").forEach(s => s.classList.add("hidden"));
+  $("tab-" + b.dataset.tab).classList.remove("hidden");
+  if (b.dataset.tab === "home") loadHome();
+  if (b.dataset.tab === "sarah") loadSarah();
+});
+
+function renderReminders(rem) {
+  const box = $("reminders"); box.replaceChildren();
+  if (!rem.length) { box.append(el("p", "muted", "Nothing pending. Enjoy the evening.")); return; }
+  for (const r of rem) {
+    const row = el("div", "reminder"), p = el("p", "", r.action);
+    if (r.priority === 1) p.append(el("span", "badge boost", "⭐ asked twice"));
+    if (r.escalation_level >= 1) p.append(el("span", "badge esc", "escalated"));
+    const done = r.status === "acknowledged";
+    const b = el("button", "btn", done ? "✓ Done" : "Got it"); b.disabled = done;
+    b.onclick = async () => { await post(`/api/reminders/${DATE}/${r.commitment_id}/ack`); loadHome(); };
+    row.append(p, b); box.append(row);
+  }
+}
+
+async function ensureDigest() {
+  try { return await api(`/api/digest/${DATE}`); }
+  catch (e) { return post(`/api/digest/${DATE}`); }
+}
+
+async function loadHome() {
+  try {
+    let rem = await api(`/api/reminders/${DATE}`);
+    if (!rem.length) { await post(`/api/reminders/build?date=${DATE}`); rem = await api(`/api/reminders/${DATE}`); }
+    renderReminders(rem);
+    $("digest").textContent = (await ensureDigest()).digest;
+  } catch (e) {
+    $("digest").textContent = "I couldn't reach the server just now. Please try again in a moment.";
+  }
+}
+
+$("refresh").onclick = loadHome;
+$("tick").onclick = async () => {
+  const t = $("toast"); t.replaceChildren();
+  try {
+    const r = await post(`/api/reminders/tick?date=${DATE}`);
+    if (!r.fired.length) t.append(el("p", "", "Nothing due right now."));
+    r.fired.forEach(f => t.append(el("p", "", f.message)));
+    loadHome();
+  } catch (e) { t.append(el("p", "", "Couldn't run the check-in.")); }
+};
+
+function bubble(cls, text) { const b = el("div", "bubble " + cls, text); $("chat").append(b); return b; }
+
+async function send() {
+  const input = $("q"), q = input.value.trim();
+  if (!q) return;
+  input.value = ""; bubble("user", q);
+  const thinking = bubble("bot", "EchoMind is thinking… 🌼");
+  try {
+    const r = await post("/api/qa", { question: q, date: DATE });
+    thinking.textContent = r.answer;
+    if (r.citation) thinking.append(el("span", "cite", "🎙️ heard at " + r.citation));
+    if (r.offer_reminder && r.offer_text) {
+      const b = el("button", "btn accent", "Yes, remind me"); b.style.marginTop = ".5rem";
+      b.onclick = async () => {
+        await post(`/api/reminders/${DATE}/add`, { action: "Ask about " + r.offer_text });
+        b.replaceWith(el("span", "cite", "🌿 I'll help you remember to ask."));
+      };
+      thinking.append(document.createElement("br"), b);
+    }
+  } catch (e) { thinking.textContent = "Sorry, I couldn't reach the server. Try again?"; }
+}
+$("send").onclick = send;
+$("q").onkeydown = e => { if (e.key === "Enter") send(); };
+
+async function loadSarah() {
+  const body = $("sarahBody"); body.replaceChildren();
+  try {
+    await ensureDigest();
+    const d = await api(`/api/caregiver/${DATE}`);
+    body.append(el("p", "", "Mom's own summary of her day:"));
+    const dg = el("p", "signal", d.digest); dg.style.fontStyle = "italic"; body.append(dg);
+    body.append(el("p", "", "Topics that came up repeatedly (memory/anxiety signal):"));
+    const entries = Object.entries(d.repeated_topics);
+    if (!entries.length) body.append(el("p", "signal", "None — a calm day"));
+    entries.forEach(([w, c]) => body.append(el("p", "signal", `“${w}” came up ${c}× today`)));
+    body.append(el("p", "", "Pending:"));
+    if (!d.pending.length) body.append(el("p", "signal", "Nothing pending 🎉"));
+    d.pending.forEach(p => { const row = el("p", "signal", "📌 " + p.action); if (p.boosted) row.append(el("span", "badge boost", "asked twice")); body.append(row); });
+    if (d.escalation_needed) body.append(el("p", "alert", "⚠️ Some items need your attention."));
+  } catch (e) { body.textContent = "Family view isn't ready yet. Open the Home tab first."; }
+}
+loadHome();
+</script>
+</body>
+</html>

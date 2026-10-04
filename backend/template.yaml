@@ -1,0 +1,113 @@
+# UNTESTED SAM template. Deploy from a clean copy of backend/ (no venv, no tests) or use --use-container.
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: EchoMind companion memory assistant
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 120
+    MemorySize: 512
+    Environment:
+      Variables:
+        USE_MOCK_LLM: "false"
+        USE_LOCAL_STORE: "false"
+        DDB_TABLE: !Ref DaysTable
+        DDB_COMMITMENTS: !Ref CommitmentsTable
+        DDB_REMINDERS: !Ref RemindersTable
+        DDB_DIGESTS: !Ref DigestsTable
+        DDB_DAYS: !Ref DaysTable
+        S3_BUCKET: !Ref AudioBucket
+        BEDROCK_MODEL_ID: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+
+Resources:
+  AudioBucket:
+    Type: AWS::S3::Bucket
+
+  DaysTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions: [{AttributeName: date, AttributeType: S}]
+      KeySchema: [{AttributeName: date, KeyType: HASH}]
+      BillingMode: PAY_PER_REQUEST
+
+  DigestsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions: [{AttributeName: date, AttributeType: S}]
+      KeySchema: [{AttributeName: date, KeyType: HASH}]
+      BillingMode: PAY_PER_REQUEST
+
+  CommitmentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - {AttributeName: date, AttributeType: S}
+        - {AttributeName: commitment_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: date, KeyType: HASH}
+        - {AttributeName: commitment_id, KeyType: RANGE}
+      BillingMode: PAY_PER_REQUEST
+
+  RemindersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - {AttributeName: date, AttributeType: S}
+        - {AttributeName: commitment_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: date, KeyType: HASH}
+        - {AttributeName: commitment_id, KeyType: RANGE}
+      BillingMode: PAY_PER_REQUEST
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: main.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref DaysTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref CommitmentsTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref RemindersTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref DigestsTable}
+        - S3CrudPolicy: {BucketName: !Ref AudioBucket}
+        - Statement:
+            - Effect: Allow
+              Action: [bedrock:InvokeModel]
+              Resource: "*"
+      Events:
+        Root:
+          Type: HttpApi
+          Properties: {Path: /, Method: ANY}
+        Proxy:
+          Type: HttpApi
+          Properties: {Path: "/{proxy+}", Method: ANY}
+
+  TranscribeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambdas.transcribe.handler
+      CodeUri: .
+      Timeout: 300
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref DaysTable}
+        - S3CrudPolicy: {BucketName: !Ref AudioBucket}
+        - Statement:
+            - Effect: Allow
+              Action: [transcribe:StartTranscriptionJob, transcribe:GetTranscriptionJob]
+              Resource: "*"
+      Events:
+        NewAudio:
+          Type: S3
+          Properties:
+            Bucket: !Ref AudioBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules: [{Name: prefix, Value: "audio/"}]
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  AudioBucketName:
+    Value: !Ref AudioBucket
